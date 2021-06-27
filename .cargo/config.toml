@@ -1,0 +1,14 @@
+[build]
+target = "xtensa-esp32-none-elf"
+
+[target.xtensa-esp32-none-elf]
+linker = "cargo-pio-link"
+
+[unstable]
+configurable-env = true
+extra-link-arg = true
+build-std = ["std", "panic_abort"]
+build-std-features = ["panic_immediate_abort"]
+
+[env]
+ESP_IDF_SYS_GLOB_BASE = { value = ".", relative = true }

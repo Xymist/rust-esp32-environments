@@ -1,0 +1,27 @@
+[package]
+name = "rust-esp32-environments"
+version = "0.1.0"
+authors = ["xymist"]
+edition = "2018"
+
+# No xtensa in regular compiler yet
+[package.metadata.docs.rs]
+default-target = "x86_64-unknown-linux-gnu"
+
+[profile.release]
+# symbols are nice and they don't increase the size on Flash
+debug = true
+opt-level = "z"
+
+[profile.dev]
+opt-level = "s"
+
+[dependencies]
+anyhow = {version = "1.0", features = ["backtrace"]}
+log = "0.4"
+esp-idf-sys = {version = "0.6", git = "https://github.com/ivmarkov/esp-idf-sys.git"}
+embedded-svc = {version = "0.4", git = "https://github.com/ivmarkov/embedded-svc.git"}
+esp-idf-svc = {version = "0.6", git = "https://github.com/ivmarkov/esp-idf-svc.git", features = ["binstart"]}
+esp-idf-hal = {version = "0.6", git = "https://github.com/ivmarkov/esp-idf-hal.git"}
+embedded-hal = "*"
+st7789 = "0.5"
