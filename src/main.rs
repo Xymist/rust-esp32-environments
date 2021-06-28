@@ -1,40 +1,68 @@
-use std::thread;
-use std::{env, sync::Arc, time::*};
+use std::{env, sync::Arc};
+use serde::Serialize;
 
 use anyhow::*;
 use log::*;
 
-use embedded_svc::anyerror::*;
-use embedded_svc::httpd::registry::*;
-use embedded_svc::httpd::*;
-use embedded_svc::ping::Ping;
 use embedded_svc::wifi::*;
-
-use esp_idf_svc::httpd as idf;
 use esp_idf_svc::netif::*;
 use esp_idf_svc::nvs::*;
-use esp_idf_svc::ping;
 use esp_idf_svc::sysloop::*;
 use esp_idf_svc::wifi::*;
-
-use esp_idf_hal::delay;
-use esp_idf_hal::gpio;
 use esp_idf_hal::prelude::*;
-use esp_idf_hal::spi;
+use serde_json::json;
+
+#[derive(Debug, Serialize)]
+struct TsMetric {
+    metric: &'static str,
+    value: f64
+}
+
+impl TsMetric {
+    fn temperature(value: f64) -> Self {
+        TsMetric {
+            metric: "temperature",
+            value
+        }
+    }
+
+    fn humidity(value: f64) -> Self {
+        TsMetric {
+            metric: "humidity",
+            value
+        }
+    }
+}
 
 fn main() -> Result<()> {
     env::set_var("RUST_BACKTRACE", "1");
 
     let peripherals = Peripherals::take().unwrap();
-    let pins = peripherals.pins;
-
-    threads_playground();
-
+    let _pins = peripherals.pins;
     let _wifi = wifi()?;
 
+    send_request(&TsMetric::humidity(100.0))?;
+        // send_request(&TsMetric::temperature(40.0))?;
+        // send_request(&TsMetric::temperature(20.0))?;
     loop {
         std::thread::sleep(std::time::Duration::from_secs(5));
     }
+}
+
+fn send_request(body_data: &TsMetric) -> Result<()> {
+    info!("Sending packet");
+
+    let data = json!(body_data).to_string();
+
+    minreq::post("http://victoria:4242/api/put")
+        .with_param("extra_label", "source=test_bench")
+        .with_header("Content-Type", "application/json")
+        .with_body(data)
+        .send()?;
+
+    info!("Sent!");
+
+    Ok(())
 }
 
 fn wifi() -> Result<EspWifi> {
@@ -44,8 +72,6 @@ fn wifi() -> Result<EspWifi> {
         Arc::new(EspDefaultNvs::new()?),
     )?;
 
-    info!("Wifi created");
-
     wifi.set_configuration(&Configuration::Client(ClientConfiguration {
         ssid: "VM1524709".into(),
         password: "fn6wbLxdFqmh".into(),
@@ -54,28 +80,9 @@ fn wifi() -> Result<EspWifi> {
 
     info!("Wifi configuration set, about to get status");
 
-    let status = wifi.get_status();
-
-    if let Status(
-        ClientStatus::Started(ClientConnectionStatus::Connected(ClientIpStatus::Done(ip_settings))),
-        _,
-    ) = status
-    {
-        info!("Wifi connected, about to do some pings");
-
-        let ping_summary = ping::EspPing::default()
-            .ping_summary(ip_settings.subnet.gateway, &Default::default())?;
-        if ping_summary.transmitted != ping_summary.received {
-            bail!(
-                "Pinging gateway {} resulted in timeouts",
-                ip_settings.subnet.gateway
-            );
-        }
-
-        info!("Pinging done");
-    } else {
-        bail!("Unexpected Wifi status: {:?}", &status);
+    match wifi.get_status() {
+        Status(ClientStatus::Started(ClientConnectionStatus::Connected(ClientIpStatus::Done(_))), _) => Ok(wifi),
+        failure => bail!("Unexpected Wifi status: {:?}", &failure)
     }
 
-    Ok(wifi)
 }
