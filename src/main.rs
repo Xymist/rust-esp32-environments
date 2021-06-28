@@ -41,12 +41,25 @@ fn main() -> Result<()> {
     let _pins = peripherals.pins;
     let _wifi = wifi()?;
 
-    send_request(&TsMetric::humidity(100.0))?;
-        // send_request(&TsMetric::temperature(40.0))?;
-        // send_request(&TsMetric::temperature(20.0))?;
+    take_readings()?;
+
     loop {
         std::thread::sleep(std::time::Duration::from_secs(5));
     }
+}
+
+fn take_readings() -> Result<()> {
+    let mut children = vec![];
+
+    children.push(std::thread::spawn(move || {send_request(&TsMetric::humidity(100.0))}));
+    children.push(std::thread::spawn(move || {send_request(&TsMetric::temperature(40.0))}));
+    children.push(std::thread::spawn(move || {send_request(&TsMetric::temperature(20.0))}));
+
+    for child in children {
+        let _ = child.join();
+    }
+
+    Ok(())
 }
 
 fn send_request(body_data: &TsMetric) -> Result<()> {
