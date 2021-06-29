@@ -27,3 +27,5 @@ embedded-hal = "*"
 serde = "1.0.126"
 serde_json = "1.0.64"
 minreq = {version = "2.4.2", features = ["json-using-serde"]}
+one-wire-bus = "0.1.1"
+ds18b20 = "0.1.1"
