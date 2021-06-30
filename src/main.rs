@@ -9,12 +9,14 @@ use log::*;
 use embedded_svc::wifi::*;
 use esp_idf_hal::delay;
 use esp_idf_hal::gpio::{self, Unknown};
+use esp_idf_hal::i2c;
 use esp_idf_hal::prelude::*;
 use esp_idf_svc::netif::*;
 use esp_idf_svc::nvs::*;
 use esp_idf_svc::sysloop::*;
 use esp_idf_svc::wifi::*;
-use esp_idf_hal::i2c;
+
+mod sht_20;
 
 #[derive(Debug, Serialize)]
 struct TsMetric {
@@ -60,7 +62,7 @@ fn main() -> Result<()> {
 struct Readings {
     low_temperature: Option<f32>,
     high_temperature: Option<f32>,
-    humidity: Option<f32>
+    humidity: Option<f32>,
 }
 
 impl Readings {
@@ -74,7 +76,7 @@ impl Readings {
                 } else {
                     self.high_temperature = Some(reading)
                 }
-            },
+            }
             (None, Some(u)) => {
                 if u <= reading {
                     self.low_temperature = Some(u);
@@ -82,8 +84,8 @@ impl Readings {
                 } else {
                     self.low_temperature = Some(reading);
                 }
-            },
-            (None, None) => self.low_temperature = Some(reading)
+            }
+            (None, None) => self.low_temperature = Some(reading),
         }
     }
 
@@ -97,35 +99,33 @@ impl Readings {
 fn take_readings() -> Result<()> {
     let peripherals = Peripherals::take().unwrap();
     let pins = peripherals.pins;
-    let t_pin: gpio::Gpio18<Unknown> = pins.gpio18;
-    let i2c = i2c::Slave::new(
-        peripherals.i2c0,
-        i2c::Pins {
-            sda: pins.gpio22,
-            scl: pins.gpio21
-        },
-        0x76,
-        false,
-        1024,
-        1024
 
+    let mut h_sensor = sht_20::SHT20::new(
+        peripherals.i2c0,
+        pins.gpio21.into_input_output()?,
+        pins.gpio22.into_input_output()?,
     )?;
 
-    let mut temp_sensors = vec![];
+    h_sensor.check_sht20()?;
 
+    let t_pin: gpio::Gpio18<Unknown> = pins.gpio18;
+
+    let mut temp_sensors = vec![];
     let mut delay = delay::Ets;
     let mut temp_probes = match one_wire_bus::OneWire::new(t_pin.into_input_output_od()?) {
         Ok(onewire) => onewire,
         Err(e) => {
             warn!("Failed to set up OneWire: {:?}", e);
-            return Ok(())
+            return Ok(());
         }
     };
 
     let mut search_state = None;
 
     loop {
-        if let Ok(Some((device_address, state))) = temp_probes.device_search(search_state.as_ref(), false, &mut delay) {
+        if let Ok(Some((device_address, state))) =
+            temp_probes.device_search(search_state.as_ref(), false, &mut delay)
+        {
             search_state = Some(state);
             if device_address.family_code() != ds18b20::FAMILY_CODE {
                 continue;
@@ -142,6 +142,8 @@ fn take_readings() -> Result<()> {
         }
     }
 
+    info!("Found {} DS18B20 Sensors", temp_sensors.len());
+
     loop {
         match ds18b20::start_simultaneous_temp_measurement(&mut temp_probes, &mut delay) {
             Ok(()) => (),
@@ -156,17 +158,21 @@ fn take_readings() -> Result<()> {
         let mut res = Readings::default();
 
         for sensor in &temp_sensors {
-            match sensor.read_data(&mut temp_probes, &mut delay){
+            match sensor.read_data(&mut temp_probes, &mut delay) {
                 Ok(sensor_data) => {
                     res.temperature(sensor_data.temperature);
-                },
+                }
                 Err(e) => {
                     warn!("Failed to read from sensor {:?}: {:?}", sensor.address(), e);
                     continue;
                 }
             };
-
         }
+
+        match h_sensor.humidity() {
+            Ok(h) => res.humidity(h),
+            Err(e) => warn!("Error reading from humidity sensor: {:?}", e),
+        };
 
         if let Some(t) = res.low_temperature {
             info!("Low temp is {:?}", t);
