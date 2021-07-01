@@ -19,13 +19,17 @@ opt-level = "s"
 [dependencies]
 anyhow = {version = "1.0", features = ["backtrace"]}
 log = "0.4"
-esp-idf-sys = {version = "0.6", git = "https://github.com/ivmarkov/esp-idf-sys.git"}
-embedded-svc = {version = "0.4", git = "https://github.com/ivmarkov/embedded-svc.git"}
-esp-idf-svc = {version = "0.6", git = "https://github.com/ivmarkov/esp-idf-svc.git", features = ["binstart"]}
-esp-idf-hal = {version = "0.6", git = "https://github.com/ivmarkov/esp-idf-hal.git"}
+esp-idf-sys = {version = "0.12", git = "https://github.com/ivmarkov/esp-idf-sys.git"}
+embedded-svc = {version = "0.6", git = "https://github.com/ivmarkov/embedded-svc.git"}
+esp-idf-svc = {version = "0.12", git = "https://github.com/ivmarkov/esp-idf-svc.git", features = ["binstart"]}
+esp-idf-hal = {version = "0.12", path = "https://github.com/ivmarkov/esp-idf-svc.git"}
 embedded-hal = "*"
 serde = "1.0.126"
 serde_json = "1.0.64"
 minreq = {version = "2.4.2", features = ["json-using-serde"]}
 one-wire-bus = "0.1.1"
 ds18b20 = "0.1.1"
+
+[build-dependencies]
+cargo-pio = {version = "0.11", git = "https://github.com/ivmarkov/cargo-pio"}
+anyhow = "1.0"

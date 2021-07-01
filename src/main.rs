@@ -9,7 +9,6 @@ use log::*;
 use embedded_svc::wifi::*;
 use esp_idf_hal::delay;
 use esp_idf_hal::gpio::{self, Unknown};
-use esp_idf_hal::i2c;
 use esp_idf_hal::prelude::*;
 use esp_idf_svc::netif::*;
 use esp_idf_svc::nvs::*;
@@ -38,6 +37,13 @@ impl TsMetric {
             value,
         }
     }
+
+    fn dew_point(value: f64) -> Self {
+        TsMetric {
+            metric: "dew_point",
+            value,
+        }
+    }
 }
 
 fn main() -> Result<()> {
@@ -63,6 +69,7 @@ struct Readings {
     low_temperature: Option<f32>,
     high_temperature: Option<f32>,
     humidity: Option<f32>,
+    hum_temperature: Option<f32>,
 }
 
 impl Readings {
@@ -94,19 +101,27 @@ impl Readings {
             self.humidity = Some(reading)
         }
     }
+
+    fn hum_temperature(&mut self, reading: f32) {
+        if self.hum_temperature.is_none() {
+            self.hum_temperature = Some(reading)
+        }
+    }
 }
 
 fn take_readings() -> Result<()> {
     let peripherals = Peripherals::take().unwrap();
     let pins = peripherals.pins;
+    let i2c_interface = peripherals.i2c0;
+    let sda = pins.gpio21.into_input_output()?;
+    let scl = pins.gpio22.into_input_output()?;
 
-    let mut h_sensor = sht_20::SHT20::new(
-        peripherals.i2c0,
-        pins.gpio21.into_input_output()?,
-        pins.gpio22.into_input_output()?,
-    )?;
+    let mut h_sensor = sht_20::SHT20::new(i2c_interface, sda, scl)?;
 
-    h_sensor.check_sht20()?;
+    match h_sensor.check_sht20() {
+        Ok(()) => info!("Humidity Sensor OK!"),
+        Err(e) => warn!("Humidity Sensor failing: {:?}", e),
+    };
 
     let t_pin: gpio::Gpio18<Unknown> = pins.gpio18;
 
@@ -145,32 +160,39 @@ fn take_readings() -> Result<()> {
     info!("Found {} DS18B20 Sensors", temp_sensors.len());
 
     loop {
-        match ds18b20::start_simultaneous_temp_measurement(&mut temp_probes, &mut delay) {
-            Ok(()) => (),
-            Err(e) => {
-                warn!("Failed to start temperature measurement: {:?}", e);
-                continue;
-            }
-        };
-
-        ds18b20::Resolution::Bits12.delay_for_measurement_time(&mut delay);
-
         let mut res = Readings::default();
 
-        for sensor in &temp_sensors {
-            match sensor.read_data(&mut temp_probes, &mut delay) {
-                Ok(sensor_data) => {
-                    res.temperature(sensor_data.temperature);
-                }
+        if temp_sensors.len() > 0 {
+            match ds18b20::start_simultaneous_temp_measurement(&mut temp_probes, &mut delay) {
+                Ok(()) => (),
                 Err(e) => {
-                    warn!("Failed to read from sensor {:?}: {:?}", sensor.address(), e);
+                    warn!("Failed to start temperature measurement: {:?}", e);
                     continue;
                 }
             };
+
+            ds18b20::Resolution::Bits12.delay_for_measurement_time(&mut delay);
+
+            for sensor in &temp_sensors {
+                match sensor.read_data(&mut temp_probes, &mut delay) {
+                    Ok(sensor_data) => {
+                        res.temperature(sensor_data.temperature);
+                    }
+                    Err(e) => {
+                        warn!("Failed to read from sensor {:?}: {:?}", sensor.address(), e);
+                        continue;
+                    }
+                };
+            }
         }
 
-        match h_sensor.humidity() {
+        match h_sensor.humidity(false) {
             Ok(h) => res.humidity(h),
+            Err(e) => warn!("Error reading from humidity sensor: {:?}", e),
+        };
+
+        match h_sensor.temperature(false) {
+            Ok(h) => res.hum_temperature(h),
             Err(e) => warn!("Error reading from humidity sensor: {:?}", e),
         };
 
@@ -186,7 +208,16 @@ fn take_readings() -> Result<()> {
 
         if let Some(h) = res.humidity {
             info!("Humidity is {:?}", h);
-            send_request(&TsMetric::humidity(h.into()), "central")?
+            send_request(&TsMetric::humidity(h.into()), "hygrometer")?;
+
+            if let Some(ht) = res.hum_temperature {
+                let dew_point = ht - ((100. - h) / 5.);
+                info!(
+                    "Hygrometer temperature is {:?}, thus dew point is {:?}",
+                    ht, dew_point
+                );
+                send_request(&TsMetric::dew_point(dew_point.into()), "hygrometer")?
+            }
         }
 
         std::thread::sleep(std::time::Duration::from_secs(1));
@@ -213,8 +244,8 @@ fn wifi() -> Result<EspWifi> {
     )?;
 
     wifi.set_configuration(&Configuration::Client(ClientConfiguration {
-        ssid: "VM1524709".into(),
-        password: "fn6wbLxdFqmh".into(),
+        ssid: "SSID".into(),
+        password: "PASSWORD".into(),
         ..Default::default()
     }))?;
 
