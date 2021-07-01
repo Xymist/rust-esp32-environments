@@ -22,7 +22,7 @@ log = "0.4"
 esp-idf-sys = {version = "0.12", git = "https://github.com/ivmarkov/esp-idf-sys.git"}
 embedded-svc = {version = "0.6", git = "https://github.com/ivmarkov/embedded-svc.git"}
 esp-idf-svc = {version = "0.12", git = "https://github.com/ivmarkov/esp-idf-svc.git", features = ["binstart"]}
-esp-idf-hal = {version = "0.12", path = "https://github.com/ivmarkov/esp-idf-svc.git"}
+esp-idf-hal = {version = "0.12", git = "https://github.com/ivmarkov/esp-idf-hal.git"}
 embedded-hal = "*"
 serde = "1.0.126"
 serde_json = "1.0.64"
